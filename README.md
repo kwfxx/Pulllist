@@ -1,19 +1,21 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-
 import requests
 import sys
 import time
 import json
 import instaloader
 import os
-
-from asmix import Instagram
+from rich.console import Console
+from rich.panel import Panel
+from rich.text import Text
+from rich import box
+from itertools import cycle
 
 OUTPUT_FILE = 'username.txt'
 STATE_FILE = 'state.json'
-SAVE_EVERY = 20
+SAVE_EVERY = 50
 REQUEST_DELAY = 0.7
+
+console = Console()
 
 def build_headers(sessionid, csrftoken='gLlFX76z8qqwDgmh8ZIp3uFhAeX4zKdO'):
     return {
@@ -52,10 +54,26 @@ def load_state():
     return None
 
 def append_username(u):
+    if u.startswith('@'):
+        u = u[1:]
     with open(OUTPUT_FILE, 'a', encoding='utf-8') as f:
         f.write(u + '\n')
-
-s_input = input('Enter one or more sessionid (comma separated) ').strip()
+import ethan
+ff=ethan.logo('ffnzz')
+print(ff)
+logo_lines = [
+f'''
+'''
+]
+logo_text = Text()
+for line in logo_lines:
+    logo_text.append(line + "\n", style="bold cyan")
+logo_text.append("\nETHAN TOOL", style="bold white on blue")
+logo_text.append("    ")
+logo_text.append("@FFNZZ\n\n", style="bold magenta")
+console.print(Panel(logo_text, title="Welcome", subtitle="ETHAN TOOL", expand=False, box=box.ROUNDED))
+print('')
+s_input = console.input("Enter one or more sessionid (comma separated) or filename: ").strip()
 if os.path.exists(s_input) and os.path.isfile(s_input):
     with open(s_input, 'r', encoding='utf-8') as f:
         sessionids = [line.strip() for line in f if line.strip()]
@@ -63,146 +81,165 @@ else:
     sessionids = [s.strip() for s in s_input.split(',') if s.strip()]
 
 if not sessionids:
-    print("At least one sessionid is required.")
+    console.print("At least one sessionid is required.", style="bold red")
     sys.exit(1)
 
-tr = input('Enter target username: ').strip()
-if not tr:
-    print("No target provided.")
+targets_input = console.input("Enter one or more target usernames (comma separated) or filename: ").strip()
+if os.path.exists(targets_input) and os.path.isfile(targets_input):
+    with open(targets_input, 'r', encoding='utf-8') as f:
+        targets = [line.strip().lstrip("@") for line in f if line.strip()]
+else:
+    targets = [t.strip().lstrip("@") for t in targets_input.split(',') if t.strip()]
+
+if not targets:
+    console.print("At least one target username is required.", style="bold red")
     sys.exit(1)
 
 L = instaloader.Instaloader()
-try:
-    profile = instaloader.Profile.from_username(L.context, tr)
-    target_id = str(profile.userid)
-    print("target id:", target_id)
-except Exception as e:
-    print("Error fetching profile with Instaloader:", e)
+resolved_targets = []
+for t in targets:
+    try:
+        profile = instaloader.Profile.from_username(L.context, t)
+        resolved_targets.append({'username': t, 'userid': str(profile.userid)})
+        console.print(f"Resolved @{t} -> id {profile.userid}", style="green")
+    except Exception as e:
+        console.print(f"Error resolving @{t}: {e}", style="yellow")
+
+if not resolved_targets:
+    console.print("No valid targets resolved. Exiting.", style="bold red")
     sys.exit(1)
 
 state = load_state()
-if state:
-    if state.get('target') == tr:
-        print("Loaded previous state. Resuming...")
-        m_id = state.get('m_id')
-        seen_users = set(state.get('seen_users', []))
-        p1 = state.get('p1', 0)
-        session_index = state.get('session_index', 0)
-    else:
-        print("Found state file for a different target — ignoring it.")
-        state = None
-        m_id = None
-        seen_users = set()
-        p1 = 0
-        session_index = 0
+if state and state.get('targets') == [rt['username'] for rt in resolved_targets]:
+    console.print("Loaded previous state for same targets. Resuming...", style="cyan")
+    targets_state = state.get('targets_state', {})
+    target_index = state.get('target_index', 0)
+    session_index = state.get('session_index', 0)
 else:
-    m_id = None
-    seen_users = set()
-    p1 = 0
+    targets_state = {}
+    for rt in resolved_targets:
+        targets_state[rt['username']] = {'m_id': None, 'seen_users': [], 'p1': 0}
+    target_index = 0
     session_index = 0
 
-base_url = f'https://i.instagram.com/api/v1/friendships/{target_id}/following/?count=200'
+total_sessions = len(sessionids)
+color_palette = ["bold cyan", "bold green", "bold magenta", "bold yellow", "bold blue", "bold red"]
+color_cycle = cycle(color_palette)
+target_colors = {}
+for rt in resolved_targets:
+    target_colors[rt['username']] = next(color_cycle)
 
 def safe_get(url, session_index_local):
     attempts = 0
-    total_sessions = len(sessionids)
     while attempts < total_sessions:
         sess = sessionids[session_index_local % total_sessions]
         headers = build_headers(sess)
         try:
             r = requests.get(url, headers=headers, timeout=15)
         except requests.RequestException as e:
-            print(f'Connection error with session index {session_index_local}: {e}. Switching to next session.')
+            console.print(f'Connection error with session index {session_index_local}: {e}. Switching to next session.', style="yellow")
             session_index_local = (session_index_local + 1) % total_sessions
             attempts += 1
             time.sleep(1)
             continue
-
         if r.status_code == 401:
-            print(f'401 with session index {session_index_local}. Switching to next session.')
+            console.print(f'401 with session index {session_index_local}. Switching to next session.', style="yellow")
             session_index_local = (session_index_local + 1) % total_sessions
             attempts += 1
             time.sleep(1)
             continue
-
         if '{"message":"","spam":true,"status":"fail"}' in r.text:
-            print('Request blocked (spam fail) — stopping.')
+            console.print('Request blocked (spam fail) — stopping.', style="red")
             return None, session_index_local, 'spam'
-
         if 'challenge' in r.text or r.status_code in (429, 403):
-            print(f'Received challenge/429/403 or unexpected response (code={r.status_code}). Switching session.')
+            console.print(f'Received challenge/429/403 or unexpected response (code={r.status_code}). Switching session.', style="yellow")
             session_index_local = (session_index_local + 1) % total_sessions
             attempts += 1
             time.sleep(2)
             continue
-
         return r, session_index_local, None
-
-    print('All sessionids exhausted or failed.')
+    console.print('All sessionids exhausted or failed.', style="red")
     return None, session_index_local, 'no_sessions'
 
-first_url = base_url if not m_id else base_url + (f'&max_id={m_id}' if m_id else '')
-current_url = first_url
+while target_index < len(resolved_targets):
+    current_target = resolved_targets[target_index]
+    tr = current_target['username']
+    target_id = current_target['userid']
+    color = target_colors.get(tr, "bold white")
+    console.print(f"\n=== Processing target @{tr} ({target_index + 1}/{len(resolved_targets)}) ===", style=color)
+    tstate = targets_state.get(tr, {'m_id': None, 'seen_users': [], 'p1': 0})
+    m_id = tstate.get('m_id')
+    seen_users = set(tstate.get('seen_users', []))
+    p1 = tstate.get('p1', 0)
+    base_url = f'https://i.instagram.com/api/v1/friendships/{target_id}/following/?count=200'
+    first_url = base_url if not m_id else base_url + (f'&max_id={m_id}' if m_id else '')
+    current_url = first_url
+    while True:
+        r, session_index, error = safe_get(current_url, session_index)
+        if error == 'spam' or error == 'no_sessions':
+            console.print('Execution stopped due to an unrecoverable condition.', style="red")
+            targets_state[tr] = {'m_id': m_id, 'seen_users': list(seen_users), 'p1': p1}
+            save_state({'targets': [rt['username'] for rt in resolved_targets], 'targets_state': targets_state, 'target_index': target_index, 'session_index': session_index})
+            sys.exit(1)
+        if r is None:
+            console.print('No valid response received — stopping.', style="red")
+            targets_state[tr] = {'m_id': m_id, 'seen_users': list(seen_users), 'p1': p1}
+            save_state({'targets': [rt['username'] for rt in resolved_targets], 'targets_state': targets_state, 'target_index': target_index, 'session_index': session_index})
+            sys.exit(1)
+        console.print(f"HTTP {r.status_code}", style="dim")
+        try:
+            data = r.json()
+        except Exception as e:
+            console.print(f"Failed to parse JSON: {e}", style="yellow")
+            session_index = (session_index + 1) % total_sessions
+            time.sleep(1)
+            continue
+        users = data.get('users', [])
+        if not users:
+            console.print("No users on this page.", style="dim")
+        for u in users:
+            userL = u.get('username') or u.get('user') or u.get('pk') or ''
+            if not userL:
+                continue
+            if userL in seen_users:
+                continue
+            seen_users.add(userL)
+            p1 += 1
+            console.print(f'{p1} <> @{userL} (from @{tr})', style=color)
+            append_username(f'@{userL}')
+            if p1 % SAVE_EVERY == 0:
+                targets_state[tr] = {'m_id': data.get('next_max_id'), 'seen_users': list(seen_users), 'p1': p1}
+                save_state({'targets': [rt['username'] for rt in resolved_targets], 'targets_state': targets_state, 'target_index': target_index, 'session_index': session_index})
+                console.print(f'State saved at {p1} users for @{tr}.', style="cyan")
+        next_m = data.get('next_max_id')
+        if not next_m:
+            console.print(f"Reached last page for @{tr}. Finished target.", style=color)
+            targets_state[tr] = {'m_id': None, 'seen_users': list(seen_users), 'p1': p1}
+            save_state({'targets': [rt['username'] for rt in resolved_targets], 'targets_state': targets_state, 'target_index': target_index, 'session_index': session_index})
+            break
+        m_id = next_m
+        current_url = base_url + f'&max_id={m_id}'
+        time.sleep(REQUEST_DELAY)
+    console.print(f"Done with target @{tr}. Collected {p1} unique users for this target.", style=color)
+    target_colors[tr] = next(color_cycle)
+    targets_state[tr] = {'m_id': None, 'seen_users': list(seen_users), 'p1': p1}
+    target_index += 1
+    if target_index < len(resolved_targets):
+        save_state({'targets': [rt['username'] for rt in resolved_targets], 'targets_state': targets_state, 'target_index': target_index, 'session_index': session_index})
+        console.print(f"Moving to next target (index {target_index + 1}). State saved.", style="magenta")
 
-while True:
-    r, session_index, error = safe_get(current_url, session_index)
-    if error == 'spam' or error == 'no_sessions':
-        print('Execution stopped due to an unrecoverable condition.')
-        break
-    if r is None:
-        print('No valid response received — stopping.')
-        break
-
-    print("HTTP", r.status_code)
+if os.path.exists(STATE_FILE):
     try:
-        data = r.json()
-    except Exception as e:
-        print("Failed to parse JSON:", e)
-        session_index = (session_index + 1) % len(sessionids)
-        time.sleep(1)
-        continue
+        os.remove(STATE_FILE)
+    except Exception:
+        pass
 
-    users = data.get('users', [])
-    if not users:
-        print("No more users on this page.")
-    for u in users:
-        userL = u.get('username') or u.get('user') or u.get('pk') or ''
-        if not userL:
-            continue
-        if userL in seen_users:
-            continue
-        seen_users.add(userL)
-        p1 += 1
-        print(f'{p1} <> {userL}')
-        append_username(userL)
-
-        if p1 % SAVE_EVERY == 0:
-            state_to_save = {
-                'target': tr,
-                'm_id': data.get('next_max_id'),
-                'seen_users': list(seen_users),
-                'p1': p1,
-                'session_index': session_index
-            }
-            save_state(state_to_save)
-            print(f'State saved at {p1} users.')
-
-    next_m = data.get('next_max_id')
-    if not next_m:
-        print("Reached last page. Finished.")
-        if os.path.exists(STATE_FILE):
-            try:
-                os.remove(STATE_FILE)
-            except:
-                pass
-        break
-
-    m_id = next_m
-    current_url = base_url + f'&max_id={m_id}'
-    time.sleep(REQUEST_DELAY)
-
-print('Done. Total unique users saved:', p1)
-if p1 > 0:
-    print('Results in:', OUTPUT_FILE)
+console.print('All targets processed. Done.', style="bold green")
+total_saved = 0
+for trname, st in targets_state.items():
+    total_saved += st.get('p1', 0)
+console.print(f'Total unique users saved across all targets: {total_saved}', style="bold cyan")
+if total_saved > 0:
+    console.print(f'Results in: {OUTPUT_FILE}', style="bold white on blue")
 else:
-    print('No usernames were fetched.')
+    console.print('No usernames were fetched.', style="bold yellow")
