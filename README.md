@@ -58,6 +58,32 @@ def append_username(u):
         u = u[1:]
     with open(OUTPUT_FILE, 'a', encoding='utf-8') as f:
         f.write(u + '\n')
+
+s_input = console.input("Enter one or more sessionid (comma separated) or filename: ").strip()
+if os.path.exists(s_input) and os.path.isfile(s_input):
+    with open(s_input, 'r', encoding='utf-8') as f:
+        sessionids = [line.strip() for line in f if line.strip()]
+        'X-Requested-With': 'XMLHttpRequest',
+    }
+
+def save_state(state):
+    with open(STATE_FILE, 'w', encoding='utf-8') as sf:
+        json.dump(state, sf, ensure_ascii=False, indent=2)
+
+def load_state():
+    if os.path.exists(STATE_FILE):
+        try:
+            with open(STATE_FILE, 'r', encoding='utf-8') as sf:
+                return json.load(sf)
+        except Exception:
+            return None
+    return None
+
+def append_username(u):
+    if u.startswith('@'):
+        u = u[1:]
+    with open(OUTPUT_FILE, 'a', encoding='utf-8') as f:
+        f.write(u + '\n')
 import ethan
 ff=ethan.logo('ffnzz')
 print(ff)
