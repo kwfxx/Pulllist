@@ -63,8 +63,6 @@ s_input = console.input("Enter one or more sessionid (comma separated) or filena
 if os.path.exists(s_input) and os.path.isfile(s_input):
     with open(s_input, 'r', encoding='utf-8') as f:
         sessionids = [line.strip() for line in f if line.strip()]
-        'X-Requested-With': 'XMLHttpRequest',
-    }
 
 def save_state(state):
     with open(STATE_FILE, 'w', encoding='utf-8') as sf:
