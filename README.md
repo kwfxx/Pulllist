@@ -83,8 +83,7 @@ def append_username(u):
     with open(OUTPUT_FILE, 'a', encoding='utf-8') as f:
         f.write(u + '\n')
 import ethan
-ff=ethan.logo('ffnzz')
-print(ff)
+
 logo_lines = [
 f'''
 '''
@@ -92,9 +91,9 @@ f'''
 logo_text = Text()
 for line in logo_lines:
     logo_text.append(line + "\n", style="bold cyan")
-logo_text.append("\nETHAN TOOL", style="bold white on blue")
+logo_text.append("\nWAYNE tool", style="bold white on blue")
 logo_text.append("    ")
-logo_text.append("@FFNZZ\n\n", style="bold magenta")
+logo_text.append("@sshh9\n\n", style="bold magenta")
 console.print(Panel(logo_text, title="Welcome", subtitle="ETHAN TOOL", expand=False, box=box.ROUNDED))
 print('')
 s_input = console.input("Enter one or more sessionid (comma separated) or filename: ").strip()
