@@ -1,1 +1,1 @@
-hash=['ishsidheiehdodjdirji']
+hash_list = ['ishsidheiehdodjdirji']
